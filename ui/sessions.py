@@ -158,34 +158,40 @@ def _render_loader() -> None:
         col1, col2 = st.columns(2)
 
         with col1:
+            st.markdown("**SLOT 1** — drop your topical_map.json here")
             tm_key = f"up_tm_{st.session_state.up_tm_ver}"
             tm = st.file_uploader(
-                "1️⃣ topical_map.json",
+                "Click 'Browse files' below to pick topical_map.json",
                 type=["json"],
                 key=tm_key,
-                help="Found in: topical-map-engine-pro/sessions/<id>/topical_map.json",
+                label_visibility="collapsed",
             )
             if tm is not None:
-                cc1, cc2 = st.columns([3, 1])
-                cc1.caption(f"✓ {tm.name}  ({tm.size/1024:.1f} KB)")
-                if cc2.button("✕ Remove", key=f"clear_tm_{st.session_state.up_tm_ver}"):
+                st.success(f"✓ {tm.name}  ({tm.size/1024:.1f} KB)")
+                if st.button("✕ Remove this file", key=f"clear_tm_{st.session_state.up_tm_ver}",
+                             use_container_width=True):
                     st.session_state.up_tm_ver += 1
                     st.rerun()
+            else:
+                st.caption("⬆ Click 'Browse files' to select")
 
         with col2:
+            st.markdown("**SLOT 2** — drop your all_briefs.json here")
             br_key = f"up_br_{st.session_state.up_br_ver}"
             br = st.file_uploader(
-                "2️⃣ all_briefs.json",
+                "Click 'Browse files' below to pick all_briefs.json",
                 type=["json"],
                 key=br_key,
-                help="Found in: topical-map-engine-pro/sessions/<id>/briefs/all_briefs.json",
+                label_visibility="collapsed",
             )
             if br is not None:
-                cc1, cc2 = st.columns([3, 1])
-                cc1.caption(f"✓ {br.name}  ({br.size/1024:.1f} KB)")
-                if cc2.button("✕ Remove", key=f"clear_br_{st.session_state.up_br_ver}"):
+                st.success(f"✓ {br.name}  ({br.size/1024:.1f} KB)")
+                if st.button("✕ Remove this file", key=f"clear_br_{st.session_state.up_br_ver}",
+                             use_container_width=True):
                     st.session_state.up_br_ver += 1
                     st.rerun()
+            else:
+                st.caption("⬆ Click 'Browse files' to select")
 
         label = st.text_input(
             "Session label",

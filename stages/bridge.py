@@ -175,7 +175,6 @@ def _build_session(
     meta: dict,
 ) -> MapSession:
     tm = tm_raw.get("topical_map", tm_raw)
-    central = (tm.get("central_entity") or {}).get("primary")
 
     pages: list[MapSessionPage] = []
     for page_id, brief in briefs.items():
@@ -187,6 +186,8 @@ def _build_session(
             primary_query=(brief.get("queries") or {}).get("primary_query"),
         ))
 
+    central = _resolve_central_entity(tm, briefs)
+
     return MapSession(
         session_id=session_id,
         source_label=source_label,
@@ -196,6 +197,70 @@ def _build_session(
         pages=sorted(pages, key=lambda p: (p.page_type, p.page_title)),
         created_at=meta.get("created_at"),
     )
+
+
+def _resolve_central_entity(tm: dict, briefs: dict) -> Optional[str]:
+    """
+    Resolve the session's central entity using a layered approach.
+
+    Briefs are authoritative — they describe the actual pages being generated.
+    The topical_map's stored central_entity can be stale (e.g. reused topical
+    map file from a previous session), so we cross-check against brief data.
+
+    Resolution order:
+      1. Majority central_entity across all briefs (most authoritative —
+         every brief carries its own canonical entity)
+      2. Majority parent_pillar across all briefs (derived authority)
+      3. topical_map.central_entity.primary (legacy / static field)
+      4. topical_map.central_entity as string
+      5. First brief's primary_query (last-ditch derivation)
+    """
+    from collections import Counter
+
+    # 1. Majority central_entity from briefs
+    brief_entities = [
+        b.get("central_entity", "").strip()
+        for b in briefs.values()
+        if isinstance(b.get("central_entity"), str) and b.get("central_entity", "").strip()
+    ]
+    if brief_entities:
+        most_common = Counter(brief_entities).most_common(1)[0][0]
+        if most_common:
+            return most_common
+
+    # 2. Majority parent_pillar from briefs
+    pillars = [
+        b.get("parent_pillar", "").strip()
+        for b in briefs.values()
+        if isinstance(b.get("parent_pillar"), str) and b.get("parent_pillar", "").strip()
+    ]
+    if pillars:
+        most_common = Counter(pillars).most_common(1)[0][0]
+        if most_common:
+            # If the pillar looks like an id (e.g. "pillar_xxx_001"), try to
+            # find its title from topical_map.pillars[]
+            for p in tm.get("pillars", []):
+                if p.get("id") == most_common and p.get("title"):
+                    return p["title"]
+            return most_common
+
+    # 3. topical_map nested form
+    ce = tm.get("central_entity")
+    if isinstance(ce, dict):
+        primary = ce.get("primary")
+        if primary:
+            return primary
+    # 4. topical_map flat string
+    if isinstance(ce, str) and ce.strip():
+        return ce.strip()
+
+    # 5. First brief's primary_query as fallback
+    for b in briefs.values():
+        q = (b.get("queries") or {}).get("primary_query")
+        if q:
+            return q.title()
+
+    return None
 
 
 # ── Helper: build a ContentEngineInput for one page ──────────────────────────
