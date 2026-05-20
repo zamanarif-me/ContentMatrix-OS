@@ -1,0 +1,28 @@
+{
+  "content_format": "guide",
+  "tone": "professional",
+  "pov": "second_person",
+  "reading_level": "intermediate",
+  "model_strategy": {
+    "outline_model": "gemini-2.0-flash",
+    "section_model": "gemini-2.0-flash",
+    "refine_model": "claude-sonnet-4-6",
+    "qa_model": "claude-haiku-4-5"
+  },
+  "scoring_target": {
+    "min_content_score": 75,
+    "min_term_coverage": 0.80,
+    "min_entity_coverage": 0.65,
+    "target_word_count": 2500,
+    "word_count_tolerance": 0.20,
+    "max_refine_passes": 2
+  },
+  "include_intro": true,
+  "include_faq": true,
+  "include_conclusion": true,
+  "include_cta": true,
+  "enable_internal_linking": true,
+  "enable_humanization": false,
+  "use_serp_enrichment": true,
+  "custom_instructions": "Include real SSH command examples in the manual removal section. Avoid generic 'install a security plugin' advice."
+}

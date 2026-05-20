@@ -1,0 +1,24 @@
+{# Article HTML template (Jinja2) #}
+<!DOCTYPE html>
+<html lang="{{ article.business_context.language|default('en') }}">
+<head>
+  <meta charset="utf-8">
+  <title>{{ article.title }}</title>
+  <meta name="description" content="{{ article.meta_description }}">
+  <style>
+    body { font-family: -apple-system, sans-serif; max-width: 720px; margin: 2rem auto; padding: 0 1rem; line-height: 1.6; }
+    h1 { font-size: 2.2rem; }
+    h2 { font-size: 1.5rem; margin-top: 2rem; }
+    h3 { font-size: 1.2rem; }
+    code { background: #f3f3f3; padding: 0.1rem 0.3rem; border-radius: 3px; }
+    pre { background: #f3f3f3; padding: 1rem; overflow-x: auto; }
+  </style>
+</head>
+<body>
+  <article>
+    <h1>{{ article.title }}</h1>
+    {% if article.meta_description %}<p><em>{{ article.meta_description }}</em></p>{% endif %}
+    {{ body_html | safe }}
+  </article>
+</body>
+</html>

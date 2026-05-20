@@ -1,0 +1,135 @@
+{
+  "business": {
+    "category": "service_business",
+    "niche": "WordPress security and malware removal",
+    "audience": [
+      "WordPress site owners",
+      "Agencies managing client sites",
+      "E-commerce store owners"
+    ],
+    "brand_name": "Click Growth Agency",
+    "brand_voice_notes": "Direct, expert tone. No fluff. Use concrete examples and real plugin names. Avoid marketing buzzwords like 'cutting-edge' or 'revolutionary'.",
+    "reference_urls": [
+      "https://example.com/blog/secure-wordpress",
+      "https://example.com/blog/malware-cleanup-guide"
+    ],
+    "language": "en-US"
+  },
+  "brief_source": "from_topical_engine",
+  "brief_payload": {
+    "page_id": "cluster_malware_removal_001",
+    "page_title": "WordPress Malware Removal: Complete Manual & Plugin Guide",
+    "page_type": "cluster",
+    "parent_pillar": "WordPress Security Services",
+    "central_entity": "WordPress Malware Removal",
+    "section_type": "TROUBLESHOOTING",
+    "information_gain_angle": "Step-by-step manual SSH cleanup most plugins skip",
+    "queries": {
+      "primary_query": "wordpress malware removal",
+      "secondary_queries": [
+        "how to remove malware from wordpress",
+        "wordpress malware cleanup guide",
+        "wordpress hacked what to do"
+      ],
+      "question_queries": [
+        "How do I know if my WordPress site has malware?",
+        "Can Wordfence remove malware automatically?",
+        "What is the best free WordPress malware removal plugin?"
+      ],
+      "journey_stage": "decision"
+    },
+    "headings": [
+      {"level": "H1", "text": "WordPress Malware Removal: Complete Guide", "semantic_purpose": "Establish authority + intent match"},
+      {"level": "H2", "text": "Signs Your WordPress Site Has Malware", "semantic_purpose": "Symptom recognition"},
+      {"level": "H2", "text": "Step-by-Step Manual Malware Removal", "semantic_purpose": "Core how-to — information gain"},
+      {"level": "H2", "text": "Best Plugins for Automated Cleanup", "semantic_purpose": "Tool recommendation"},
+      {"level": "H2", "text": "Common Myths About WordPress Malware", "semantic_purpose": "CONTRADICTION — myth-busting"},
+      {"level": "H2", "text": "When to Hire a Security Professional", "semantic_purpose": "Decision support"},
+      {"level": "H2", "text": "Preventing Future Infections", "semantic_purpose": "Forward-looking value"},
+      {"level": "H2", "text": "Frequently Asked Questions", "semantic_purpose": "Long-tail coverage + PAA"}
+    ],
+    "nlp_terms": {
+      "must_include": [
+        "Wordfence",
+        "Sucuri",
+        "malware scanner",
+        "WAF",
+        "SSH access",
+        "wp-content",
+        "database injection"
+      ],
+      "should_include": [
+        "Cloudflare",
+        "MalCare",
+        "iThemes Security",
+        "file integrity",
+        "two-factor authentication"
+      ],
+      "semantic_variants": [
+        "virus",
+        "infection",
+        "compromised site",
+        "hacked"
+      ]
+    },
+    "content_specs": {
+      "recommended_word_count": 2500,
+      "content_format": "guide",
+      "reading_level": "intermediate",
+      "pov": "second_person",
+      "e_e_a_t_signals": [
+        "Real plugin screenshots",
+        "Author bio with security credentials",
+        "Last-updated date"
+      ]
+    },
+    "serp_target": {
+      "featured_snippet": true,
+      "featured_snippet_section": "Step-by-Step Manual Malware Removal",
+      "featured_snippet_format": "ordered_list",
+      "people_also_ask": [
+        "How do I clean my WordPress site from malware?",
+        "Is WordPress safe from malware?",
+        "What is the best WordPress malware scanner?"
+      ],
+      "schema_markup": "HowTo"
+    },
+    "semantic_bridges": [
+      {
+        "bridge_point": "WAF configuration",
+        "link_destination": "pillar_wordpress_security_001",
+        "anchor_suggestion": "WordPress firewall setup guide",
+        "shared_entity": "WAF",
+        "relationship_strength": 0.85
+      }
+    ],
+    "next_destination": {
+      "next_page_id": "cluster_wp_firewall_setup_001",
+      "next_page_title": "WordPress Firewall Setup",
+      "transition_reason": "Prevention is the natural next step after cleanup",
+      "transition_anchor": "Now that your site is clean, set up a firewall to prevent re-infection →"
+    },
+    "eeat_requirements": {
+      "author_expertise": "5+ years WordPress security, certified ethical hacker (CEH)",
+      "experience_signals": [
+        "Mention real client cleanup cases (anonymized)",
+        "Show actual SSH command examples",
+        "Reference specific malware patterns seen in 2025-2026"
+      ],
+      "trust_signals": [
+        "Link to official Wordfence/Sucuri docs",
+        "Cite CVE numbers where relevant"
+      ]
+    }
+  },
+  "topical_map_ref": {
+    "source": "sessions/20260518_143022_wordpress_security/topical_map.json",
+    "central_entity": "WordPress Security Services",
+    "pillars": [
+      {"id": "pillar_wordpress_security_001", "title": "WordPress Security Services"},
+      {"id": "pillar_malware_protection_001", "title": "WordPress Malware Protection"},
+      {"id": "pillar_backup_recovery_001", "title": "WordPress Backup & Recovery"}
+    ]
+  },
+  "target_keyword": "wordpress malware removal"
+}
