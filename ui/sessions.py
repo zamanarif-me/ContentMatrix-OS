@@ -141,6 +141,14 @@ def _render_loader() -> None:
         "💻 Local folder",
     ])
 
+    # Counter-based keys allow us to "reset" a file_uploader by changing its key
+    if "up_tm_ver" not in st.session_state:
+        st.session_state.up_tm_ver = 0
+    if "up_br_ver" not in st.session_state:
+        st.session_state.up_br_ver = 0
+    if "up_zip_ver" not in st.session_state:
+        st.session_state.up_zip_ver = 0
+
     with tab_files:
         st.markdown(
             "**Upload BOTH files from your topical-map-engine-pro session:**\n"
@@ -148,20 +156,36 @@ def _render_loader() -> None:
             "- `all_briefs.json` (all content briefs)"
         )
         col1, col2 = st.columns(2)
+
         with col1:
+            tm_key = f"up_tm_{st.session_state.up_tm_ver}"
             tm = st.file_uploader(
                 "1️⃣ topical_map.json",
                 type=["json"],
-                key="up_tm",
+                key=tm_key,
                 help="Found in: topical-map-engine-pro/sessions/<id>/topical_map.json",
             )
+            if tm is not None:
+                cc1, cc2 = st.columns([3, 1])
+                cc1.caption(f"✓ {tm.name}  ({tm.size/1024:.1f} KB)")
+                if cc2.button("✕ Remove", key=f"clear_tm_{st.session_state.up_tm_ver}"):
+                    st.session_state.up_tm_ver += 1
+                    st.rerun()
+
         with col2:
+            br_key = f"up_br_{st.session_state.up_br_ver}"
             br = st.file_uploader(
                 "2️⃣ all_briefs.json",
                 type=["json"],
-                key="up_br",
+                key=br_key,
                 help="Found in: topical-map-engine-pro/sessions/<id>/briefs/all_briefs.json",
             )
+            if br is not None:
+                cc1, cc2 = st.columns([3, 1])
+                cc1.caption(f"✓ {br.name}  ({br.size/1024:.1f} KB)")
+                if cc2.button("✕ Remove", key=f"clear_br_{st.session_state.up_br_ver}"):
+                    st.session_state.up_br_ver += 1
+                    st.rerun()
 
         label = st.text_input(
             "Session label",
@@ -178,28 +202,45 @@ def _render_loader() -> None:
         elif tm and br:
             st.success("✅ Both files ready. Click **Load files** below.")
 
-        if st.button(
+        bt1, bt2 = st.columns([3, 1])
+        if bt1.button(
             "🚀 Load files",
             key="btn_load_files",
             type="primary",
             disabled=not (tm and br),
+            use_container_width=True,
         ):
             try:
                 sess = bridge.load_from_files(tm, br, session_label=label)
                 _register_session(sess)
                 st.success(f"Loaded: {sess.session_id} ({len(sess.pages)} pages)")
+                # Reset uploaders after successful load
+                st.session_state.up_tm_ver += 1
+                st.session_state.up_br_ver += 1
                 st.rerun()
             except Exception as e:
                 st.error(f"Load failed: {e}")
+        if bt2.button("Clear both", key="clear_both", use_container_width=True):
+            st.session_state.up_tm_ver += 1
+            st.session_state.up_br_ver += 1
+            st.rerun()
 
     with tab_zip:
         st.caption("Upload a zipped session folder from topical-map-engine.")
-        f = st.file_uploader("ZIP file", type=["zip"], key="upload_zip")
-        if f and st.button("Load ZIP", key="btn_load_zip"):
+        zip_key = f"upload_zip_{st.session_state.up_zip_ver}"
+        f = st.file_uploader("ZIP file", type=["zip"], key=zip_key)
+        if f is not None:
+            cc1, cc2 = st.columns([3, 1])
+            cc1.caption(f"✓ {f.name}  ({f.size/1024:.1f} KB)")
+            if cc2.button("✕ Remove", key=f"clear_zip_{st.session_state.up_zip_ver}"):
+                st.session_state.up_zip_ver += 1
+                st.rerun()
+        if f and st.button("Load ZIP", key="btn_load_zip", type="primary"):
             try:
                 sess = bridge.load_from_zip(f, original_name=f.name)
                 _register_session(sess)
                 st.success(f"Loaded: {sess.session_id} ({len(sess.pages)} pages)")
+                st.session_state.up_zip_ver += 1
                 st.rerun()
             except Exception as e:
                 st.error(f"Load failed: {e}")
