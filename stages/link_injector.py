@@ -20,7 +20,6 @@ import re
 from dataclasses import dataclass
 
 from content_models import GeneratedArticle
-from stages.url_map import URLMap
 
 
 @dataclass
@@ -53,35 +52,19 @@ def inject_from_brief(
     article: GeneratedArticle,
     bridges: list[dict],
     next_destination: dict | None,
-    url_map: URLMap | None = None,
-    page_titles: dict[str, str] | None = None,
 ) -> LinkInjectionReport:
     """
     Inject internal links based on the brief's semantic_bridges +
     next_destination. Mutates article.final_md.
-
-    If url_map is provided, page_id destinations are resolved to real URLs.
-    page_titles is a {page_id: title} hint used by url_map for slug fallback.
     """
     report = LinkInjectionReport()
     md = article.final_md or ""
-    page_titles = page_titles or {}
-
-    def _resolve(raw_dest: str) -> str:
-        if not raw_dest:
-            return raw_dest
-        if raw_dest.startswith(("http://", "https://", "/")):
-            return raw_dest
-        if url_map is not None:
-            return url_map.resolve(raw_dest, fallback_title=page_titles.get(raw_dest, ""))
-        return raw_dest
 
     # ── Semantic bridges ─────────────────────────────────────────────────────
     for b in bridges or []:
         report.bridges_total += 1
         anchor = (b.get("anchor_suggestion") or "").strip()
-        dest_raw = (b.get("link_destination") or "").strip()
-        dest = _resolve(dest_raw)
+        dest = (b.get("link_destination") or "").strip()
         entity = (b.get("shared_entity") or "").strip()
         bridge_point = (b.get("bridge_point") or "").strip()
 
@@ -119,8 +102,7 @@ def inject_from_brief(
         page_id = (next_destination.get("next_page_id") or "").strip()
         page_title = (next_destination.get("next_page_title") or "").strip()
         if anchor and (page_id or page_title):
-            raw = page_id or _slugify(page_title)
-            dest = _resolve(raw)
+            dest = page_id or _slugify(page_title)
             if not _is_already_linked(md, anchor) and not _is_already_linked(md, page_title):
                 md = _append_next_dest_block(md, anchor, dest, page_title)
                 report.next_dest_added = True

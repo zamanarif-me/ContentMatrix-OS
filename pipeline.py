@@ -161,8 +161,6 @@ def run_pipeline(
             article,
             bridges=input_.brief_payload.get("semantic_bridges") or [],
             next_destination=input_.brief_payload.get("next_destination"),
-            url_map=getattr(input_, "_url_map", None),
-            page_titles=getattr(input_, "_page_titles", None),
         )
         _log(
             f"  bridges: {report.bridges_wrapped} wrapped, "
@@ -180,15 +178,8 @@ def run_pipeline(
     # ── Stage 7: Refine ──────────────────────────────────────────────────────
     if not quality.passed_target:
         _progress("Refinement", 0.9)
-        article, quality = refiner.refine_until_target(
-            article, quality, config,
-            brief=input_.brief_payload,
-            business=input_.business,
-            terms=terms,
-            dry_run=dry_run,
-        )
+        article, quality = refiner.refine_until_target(article, quality, config)
         article.quality = quality
-        _log(f"  after refine: score={quality.overall_score}/100 | passes={article.refine_passes}")
 
     article.status = ArticleStatus.COMPLETE if quality.passed_target else ArticleStatus.READY
     article.cost_usd = tracker.total_cost

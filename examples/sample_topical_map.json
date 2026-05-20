@@ -1,0 +1,42 @@
+{
+  "topical_map": {
+    "central_entity": {
+      "primary": "WordPress Security",
+      "type": "service_niche",
+      "description": "WordPress security services including malware removal, firewall setup, and hardening"
+    },
+    "pillars": [
+      {
+        "id": "pillar_wordpress_security_001",
+        "title": "WordPress Security Services",
+        "primary_query": "wordpress security services",
+        "page_type": "Pillar"
+      },
+      {
+        "id": "pillar_malware_protection_001",
+        "title": "WordPress Malware Protection",
+        "primary_query": "wordpress malware protection",
+        "page_type": "Pillar"
+      }
+    ],
+    "clusters": [
+      {
+        "id": "cluster_malware_removal_001",
+        "parent_pillar": "pillar_malware_protection_001",
+        "title": "WordPress Malware Removal Guide",
+        "primary_query": "wordpress malware removal",
+        "page_type": "Cluster"
+      },
+      {
+        "id": "cluster_security_plugins_001",
+        "parent_pillar": "pillar_wordpress_security_001",
+        "title": "Best WordPress Security Plugins",
+        "primary_query": "best wordpress security plugins",
+        "page_type": "Cluster"
+      }
+    ],
+    "geo_pages": [],
+    "created_at": "2026-05-20T00:00:00Z",
+    "session_label": "wordpress_security_sample"
+  }
+}

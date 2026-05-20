@@ -113,33 +113,3 @@ def delete_session(session_id: str) -> bool:
     items = [s for s in list_sessions() if s.get("session_id") != session_id]
     INDEX_FILE.write_text(json.dumps(items, indent=2), encoding="utf-8")
     return True
-
-
-# ── Bridge integration: find articles by source page_id ───────────────────────
-
-def find_status_map(page_ids: list[str]) -> dict[str, list[dict]]:
-    """
-    Return {page_id: [article_metas, ...]} for the given source page_ids.
-    Powers the Sessions browser's per-brief status badges.
-
-    One pass over the article index — much faster than per-brief lookup.
-    """
-    result: dict[str, list[dict]] = {pid: [] for pid in page_ids}
-    want = set(page_ids)
-    for sess_meta in list_sessions():
-        sid = sess_meta.get("session_id")
-        if not sid:
-            continue
-        art = load_session(sid)
-        if not art or art.page_id not in want:
-            continue
-        result[art.page_id].append({
-            "session_id":    sid,
-            "article_id":    art.article_id,
-            "page_title":    art.title,
-            "status":        art.status.value if hasattr(art.status, "value") else str(art.status),
-            "quality_score": art.quality.overall_score,
-            "word_count":    art.quality.word_count,
-            "created_at":    sess_meta.get("created_at"),
-        })
-    return result

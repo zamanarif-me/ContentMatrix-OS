@@ -1,0 +1,85 @@
+{
+  "cluster_malware_removal_001": {
+    "page_id": "cluster_malware_removal_001",
+    "page_title": "WordPress Malware Removal: Complete Manual & Plugin Guide",
+    "page_type": "Cluster",
+    "parent_pillar": "pillar_malware_protection_001",
+    "central_entity": "WordPress Malware Removal",
+    "queries": {
+      "primary_query": "wordpress malware removal",
+      "secondary_queries": ["how to remove malware from wordpress", "wordpress malware cleanup guide"],
+      "question_queries": ["How do I know if my WordPress site has malware?", "Can Wordfence remove malware automatically?"]
+    },
+    "headings": [
+      {"level": "H2", "text": "Signs Your WordPress Site Has Malware", "semantic_purpose": "Symptom recognition before escalation"},
+      {"level": "H2", "text": "Step-by-Step Manual Malware Removal via SSH", "semantic_purpose": "Core how-to — information gain over generic plugin guides"},
+      {"level": "H3", "text": "Accessing Your Server via SSH", "semantic_purpose": "Prerequisites and access setup"},
+      {"level": "H2", "text": "Best Plugins for Automated Malware Cleanup", "semantic_purpose": "Tool recommendation with honest pros/cons"},
+      {"level": "H2", "text": "Common Myths About WordPress Malware", "semantic_purpose": "Myth-busting to build E-E-A-T trust"},
+      {"level": "H2", "text": "Preventing Future WordPress Infections", "semantic_purpose": "Forward-looking hardening checklist"}
+    ],
+    "nlp_terms": {
+      "must_include": ["Wordfence", "Sucuri", "malware scanner", "WAF", "SSH access", "wp-content", "database injection"],
+      "should_include": ["Cloudflare", "MalCare", "file integrity", "two-factor authentication", "wp-login.php"]
+    },
+    "content_specs": {"recommended_word_count": 2500, "content_format": "guide"},
+    "semantic_bridges": [
+      {
+        "bridge_point": "WAF configuration",
+        "link_destination": "cluster_security_plugins_001",
+        "anchor_suggestion": "best WordPress security plugins",
+        "shared_entity": "WAF",
+        "relationship_strength": 0.85
+      }
+    ],
+    "next_destination": {
+      "next_page_id": "cluster_security_plugins_001",
+      "next_page_title": "Best WordPress Security Plugins",
+      "transition_anchor": "Now that your site is clean, install a security plugin to prevent re-infection"
+    },
+    "eeat_requirements": {
+      "author_expertise": "5+ years WordPress security",
+      "experience_signals": ["Show actual SSH command examples", "Reference specific malware patterns seen in 2026"],
+      "trust_signals": ["Link to official Wordfence/Sucuri documentation"]
+    }
+  },
+  "cluster_security_plugins_001": {
+    "page_id": "cluster_security_plugins_001",
+    "page_title": "Best WordPress Security Plugins in 2026 (Tested & Ranked)",
+    "page_type": "Cluster",
+    "parent_pillar": "pillar_wordpress_security_001",
+    "central_entity": "WordPress Security Plugins",
+    "queries": {
+      "primary_query": "best wordpress security plugins",
+      "secondary_queries": ["wordpress security plugin comparison", "wordfence vs sucuri"],
+      "question_queries": ["Which WordPress security plugin is best for beginners?", "Is Wordfence or Sucuri better?"]
+    },
+    "headings": [
+      {"level": "H2", "text": "How We Tested These WordPress Security Plugins", "semantic_purpose": "Establish methodology and expertise for E-E-A-T"},
+      {"level": "H2", "text": "Wordfence Security: Full Review", "semantic_purpose": "Detailed review of the most popular free option"},
+      {"level": "H2", "text": "Sucuri Security: Full Review", "semantic_purpose": "Cloud-based WAF alternative with CDN benefits"},
+      {"level": "H2", "text": "MalCare vs iThemes Security: Quick Comparison", "semantic_purpose": "Side-by-side for readers who want alternatives"},
+      {"level": "H2", "text": "Which Plugin Is Right for Your Site?", "semantic_purpose": "Decision framework based on site type and budget"}
+    ],
+    "nlp_terms": {
+      "must_include": ["Wordfence", "Sucuri", "MalCare", "firewall rules", "malware scan", "login protection", "brute force"],
+      "should_include": ["iThemes Security", "two-factor authentication", "file change monitoring", "ip blocking"]
+    },
+    "content_specs": {"recommended_word_count": 2200, "content_format": "comparison"},
+    "semantic_bridges": [
+      {
+        "bridge_point": "malware removal process",
+        "link_destination": "cluster_malware_removal_001",
+        "anchor_suggestion": "WordPress malware removal guide",
+        "shared_entity": "malware scanner",
+        "relationship_strength": 0.80
+      }
+    ],
+    "next_destination": null,
+    "eeat_requirements": {
+      "author_expertise": "Tested all plugins on live WordPress installations",
+      "experience_signals": ["Include real scan time benchmarks", "Mention false positive rates from testing"],
+      "trust_signals": ["Link to each plugin official documentation"]
+    }
+  }
+}

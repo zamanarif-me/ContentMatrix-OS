@@ -7,9 +7,6 @@ Lets the user:
   3. See per-page status: pending / done / multiple drafts
   4. Generate one article OR bulk-generate all pending
   5. Jump to any generated article for preview/export
-
-Loaded sessions are kept in st.session_state so the user can switch
-between them without re-loading.
 """
 
 from __future__ import annotations
@@ -34,7 +31,6 @@ from ui.session_manager import find_status_map, save_session
 # ── Session-state helpers ─────────────────────────────────────────────────────
 
 def _loaded_sessions() -> dict[str, bridge.MapSession]:
-    """Dict of session_id -> MapSession kept across reruns."""
     if "map_sessions" not in st.session_state:
         st.session_state.map_sessions = {}
     return st.session_state.map_sessions
@@ -61,7 +57,6 @@ def render_sessions() -> None:
         st.info("No sessions loaded yet. Use the loader above.")
         return
 
-    # Session picker
     sid_options = list(sessions.keys())
     active_sid = st.session_state.get("active_session_id", sid_options[0])
     if active_sid not in sid_options:
@@ -109,7 +104,6 @@ def _render_url_map(sess: bridge.MapSession) -> None:
             key=f"url_slash_{sess.session_id}",
         )
 
-        # Coverage
         cov = sess.url_map.coverage([p.page_id for p in sess.pages])
         c1, c2, c3, c4 = st.columns(4)
         c1.metric("Total",    cov["total"])
@@ -118,7 +112,7 @@ def _render_url_map(sess: bridge.MapSession) -> None:
         c4.metric("Fallback", cov["fallback"])
 
         st.markdown("**Override URLs** (leave blank to use slug)")
-        for p in sess.pages[:25]:  # cap UI for huge sessions
+        for p in sess.pages[:25]:
             current = sess.url_map.explicit.get(p.page_id, "")
             resolved = sess.url_map.resolve(p.page_id, fallback_title=p.page_title)
             new_val = st.text_input(
@@ -149,13 +143,11 @@ def _render_loader() -> None:
         st.caption("Point to a topical-map-engine-pro/sessions/<id> folder.")
         path = st.text_input(
             "Session folder",
-            value=st.session_state.get("last_local_path",
-                                       "../topical-map-engine-pro/sessions"),
+            value=st.session_state.get("last_local_path", "../topical-map-engine-pro/sessions"),
             key="local_session_input",
         )
         if st.button("Load from folder", key="btn_load_local"):
             try:
-                # If user gave the sessions root, list and let them pick
                 p = Path(path)
                 if p.is_dir() and (p / "topical_map.json").exists():
                     sess = bridge.load_from_local_folder(p)
@@ -164,7 +156,6 @@ def _render_loader() -> None:
                     st.success(f"Loaded: {sess.session_id} ({len(sess.pages)} pages)")
                     st.rerun()
                 else:
-                    # Treat as parent of multiple sessions
                     subs = sorted([x for x in p.iterdir() if x.is_dir()], reverse=True)
                     if not subs:
                         st.warning("No session folders found.")
@@ -223,7 +214,7 @@ def _render_session_summary(sess: bridge.MapSession) -> None:
     col4.metric("Pending",            pending)
 
 
-# ── Business context block (sticky for batch use) ─────────────────────────────
+# ── Business context block ────────────────────────────────────────────────────
 
 def _render_business_block() -> None:
     st.markdown("**Business context** (applied to every article in this session)")
@@ -288,7 +279,6 @@ def _render_page_table(sess: bridge.MapSession) -> None:
                     disabled=len(pending_ids) == 0):
         _run_batch(sess, pending_ids)
 
-    # Per-page row
     for p in sess.pages:
         if p.page_type not in type_filter:
             continue
@@ -313,7 +303,7 @@ def _run_one(sess: bridge.MapSession, page_id: str) -> None:
     try:
         business = _build_business()
         ci = bridge.make_engine_input(sess, page_id, business)
-        cfg = GenerationConfig()  # defaults — user can deep-customize in Generate page
+        cfg = GenerationConfig()
     except Exception as e:
         st.error(f"Setup failed: {e}")
         return

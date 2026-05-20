@@ -11,9 +11,6 @@ def render_sidebar() -> None:
         if st.button("Home",     use_container_width=True, key="nav_home"):
             st.session_state.page = "home"
             st.rerun()
-        if st.button("Sessions", use_container_width=True, key="nav_sessions"):
-            st.session_state.page = "sessions"
-            st.rerun()
         if st.button("Upload",   use_container_width=True, key="nav_upload"):
             st.session_state.page = "upload"
             st.rerun()

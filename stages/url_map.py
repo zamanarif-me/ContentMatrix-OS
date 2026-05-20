@@ -1,27 +1,20 @@
 """
-URL Map — production-ready internal link destinations.
+URL Map — resolves page_id → live URL for internal link injection.
 
-Problem: topical-map-engine outputs `page_id` strings (e.g. `pillar_wp_security_001`).
-ContentMatrix OS needs real URLs (e.g. `https://example.com/wordpress-security/`)
-to inject valid markdown links into generated articles.
+Resolution order (per page_id):
+  1. explicit[page_id]          — user-set override (exact URL)
+  2. base_url + slugs[page_id]  — auto-generated slug
+  3. page_id as-is              — fallback (shows in links, not ideal)
 
-Resolution order for a given page_id:
-  1. Explicit override in url_map.json (user-curated)
-  2. Auto-generated slug + configured base_url
-  3. Raw page_id as fallback (so links still exist, even if broken)
-
-URL maps live alongside the topical-map session:
-    sessions/<id>/
-      topical_map.json
-      briefs/all_briefs.json
-      url_map.json          <- NEW, optional
+URLMap is stored in MapSession and passed to link_injector via ContentEngineInput._url_map.
+It is also persisted as url_map.json inside the session folder.
 """
 
 from __future__ import annotations
 
 import json
 import re
-from dataclasses import asdict, dataclass, field
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
 
@@ -30,117 +23,57 @@ from typing import Optional
 
 @dataclass
 class URLMap:
-    """
-    Maps topical-map page_ids to real URLs.
-
-    Fields:
-      base_url       Origin + optional path prefix, e.g. "https://example.com/blog"
-                     Always normalized to NO trailing slash.
-      explicit       page_id -> absolute or relative URL (takes precedence over slug)
-      slugs          page_id -> slug (used if not in explicit). Auto-generated
-                     from page_title at load time if missing.
-      append_slash   Append trailing slash to generated URLs (WordPress default)
-    """
     base_url:     str = ""
-    explicit:     dict[str, str] = field(default_factory=dict)
-    slugs:        dict[str, str] = field(default_factory=dict)
+    explicit:     dict[str, str] = field(default_factory=dict)   # user overrides
+    slugs:        dict[str, str] = field(default_factory=dict)   # auto-generated
     append_slash: bool = True
 
-    # ── Resolution ─────────────────────────────────────────────────────────────
+    # ── Resolution ────────────────────────────────────────────────────────────
 
     def resolve(self, page_id: str, fallback_title: str = "") -> str:
-        """
-        Return the best available URL for a page_id. Never raises — falls back
-        to the page_id itself so generated articles always have a string.
-        """
-        if not page_id:
-            return ""
-
-        # 1. Explicit override wins
+        """Return the best URL for page_id."""
+        # 1. Explicit user override
         if page_id in self.explicit:
-            return self._normalize(self.explicit[page_id])
+            return self.explicit[page_id]
 
-        # 2. Slug + base_url
-        slug = self.slugs.get(page_id) or _slugify(fallback_title) or _slugify(page_id)
-        if slug:
-            return self._build(slug)
+        # 2. base_url + slug
+        slug = self.slugs.get(page_id) or _slugify(fallback_title or page_id)
+        if self.base_url:
+            base = self.base_url.rstrip("/")
+            sep = "/" if self.append_slash else ""
+            return f"{base}/{slug}{sep}"
 
-        # 3. Last-resort fallback
+        # 3. Fallback: raw page_id
         return page_id
 
-    def _build(self, slug: str) -> str:
-        slug = slug.strip("/").strip()
-        if self.base_url:
-            url = f"{self.base_url.rstrip('/')}/{slug}"
-        else:
-            url = f"/{slug}"
-        if self.append_slash and not url.endswith("/"):
-            url += "/"
-        return url
+    def set_url(self, page_id: str, url: str) -> None:
+        """Set an explicit URL override for a page."""
+        self.explicit[page_id] = url.strip()
 
-    def _normalize(self, url: str) -> str:
-        """If a URL looks bare-relative, prefix with base_url."""
-        url = url.strip()
-        if not url:
-            return url
-        if url.startswith(("http://", "https://", "//", "mailto:", "tel:")):
-            return url
-        if not self.base_url:
-            return url if url.startswith("/") else f"/{url}"
-        return f"{self.base_url.rstrip('/')}/{url.lstrip('/')}"
-
-    # ── Persistence ────────────────────────────────────────────────────────────
-
-    @classmethod
-    def from_file(cls, path: str | Path) -> "URLMap":
-        path = Path(path)
-        if not path.exists():
-            return cls()
-        try:
-            data = json.loads(path.read_text(encoding="utf-8"))
-            return cls(
-                base_url=    data.get("base_url", ""),
-                explicit=    dict(data.get("explicit", {})),
-                slugs=       dict(data.get("slugs", {})),
-                append_slash=bool(data.get("append_slash", True)),
-            )
-        except Exception:
-            return cls()
-
-    def save(self, path: str | Path) -> None:
-        Path(path).write_text(
-            json.dumps(asdict(self), indent=2, sort_keys=True),
-            encoding="utf-8",
-        )
-
-    # ── Population helpers ─────────────────────────────────────────────────────
+    # ── Slug auto-population ──────────────────────────────────────────────────
 
     def autopopulate_from_pages(self, pages: list[dict]) -> int:
         """
-        Walk a list of {page_id, page_title} dicts and fill missing slugs.
-        Returns the number of slugs added.
+        Fill missing slugs from page titles.
+        pages: list of {"page_id": str, "page_title": str}
+        Returns number of new slugs added.
         """
         added = 0
         for p in pages:
-            pid = p.get("page_id") or p.get("id")
-            title = p.get("page_title") or p.get("title") or ""
-            if not pid or pid in self.slugs or pid in self.explicit:
-                continue
-            slug = _slugify(title) or _slugify(pid)
-            if slug:
-                self.slugs[pid] = slug
+            pid = p.get("page_id", "")
+            if pid and pid not in self.slugs:
+                title = p.get("page_title", pid)
+                self.slugs[pid] = _slugify(title)
                 added += 1
         return added
 
-    def set_url(self, page_id: str, url: str) -> None:
-        """User-curated override."""
-        self.explicit[page_id] = url
+    # ── Coverage stats ────────────────────────────────────────────────────────
 
     def coverage(self, page_ids: list[str]) -> dict:
-        """Stats for the UI dashboard."""
-        total = len(page_ids)
+        """Return coverage breakdown for a list of page_ids."""
+        total    = len(page_ids)
         explicit = sum(1 for p in page_ids if p in self.explicit)
-        slugged = sum(1 for p in page_ids if p in self.slugs and p not in self.explicit)
+        slugged  = sum(1 for p in page_ids if p not in self.explicit and p in self.slugs)
         fallback = total - explicit - slugged
         return {
             "total":    total,
@@ -149,21 +82,49 @@ class URLMap:
             "fallback": fallback,
         }
 
+    # ── Persistence ───────────────────────────────────────────────────────────
+
+    def save(self, path: str | Path) -> None:
+        path = Path(path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        data = {
+            "base_url":     self.base_url,
+            "append_slash": self.append_slash,
+            "explicit":     self.explicit,
+            "slugs":        self.slugs,
+        }
+        path.write_text(json.dumps(data, indent=2), encoding="utf-8")
+
+    @classmethod
+    def from_file(cls, path: str | Path) -> "URLMap":
+        path = Path(path)
+        data = json.loads(path.read_text(encoding="utf-8"))
+        return cls(
+            base_url=data.get("base_url", ""),
+            append_slash=data.get("append_slash", True),
+            explicit=data.get("explicit", {}),
+            slugs=data.get("slugs", {}),
+        )
+
+
+# ── Session loader ────────────────────────────────────────────────────────────
+
+def load_for_session(session_dir: str | Path) -> Optional[URLMap]:
+    """
+    Load url_map.json from session folder if it exists.
+    Returns None if not found — caller should create a fresh URLMap().
+    """
+    path = Path(session_dir) / "url_map.json"
+    if path.exists():
+        try:
+            return URLMap.from_file(path)
+        except Exception:
+            pass
+    return None
+
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 def _slugify(text: str) -> str:
-    if not text:
-        return ""
-    s = re.sub(r"[^a-z0-9]+", "-", str(text).lower()).strip("-")
-    return s[:80]
-
-
-# ── Session integration ───────────────────────────────────────────────────────
-
-def load_for_session(session_dir: str | Path) -> URLMap:
-    """
-    Load `url_map.json` from a topical-map session folder.
-    Missing or invalid file -> returns an empty URLMap.
-    """
-    return URLMap.from_file(Path(session_dir) / "url_map.json")
+    s = re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-")
+    return s[:80] or "page"

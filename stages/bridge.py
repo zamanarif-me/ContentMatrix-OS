@@ -44,10 +44,10 @@ class MapSessionPage:
 class MapSession:
     """A loaded topical-map-engine session, ready for ContentMatrix consumption."""
     session_id:      str
-    source_label:    str            # human-readable ("local: foo", "zip: bar.zip")
+    source_label:    str
     central_entity:  Optional[str]
-    topical_map_raw: dict           # full topical_map.json
-    briefs:          dict[str, dict]  # page_id -> brief_payload
+    topical_map_raw: dict
+    briefs:          dict[str, dict]
     pages:           list[MapSessionPage] = field(default_factory=list)
     created_at:      Optional[str] = None
     url_map:         Optional["URLMap"] = None
@@ -56,9 +56,6 @@ class MapSession:
 # ── Loader 1: Local folder ────────────────────────────────────────────────────
 
 def load_from_local_folder(session_dir: str | Path) -> MapSession:
-    """
-    Load a session from a topical-map-engine-pro/sessions/<id>/ folder.
-    """
     session_dir = Path(session_dir)
     if not session_dir.is_dir():
         raise FileNotFoundError(f"Not a directory: {session_dir}")
@@ -91,18 +88,11 @@ def load_from_local_folder(session_dir: str | Path) -> MapSession:
 # ── Loader 2: Uploaded ZIP ────────────────────────────────────────────────────
 
 def load_from_zip(uploaded_file: IO, original_name: str = "session.zip") -> MapSession:
-    """
-    Load from a zipped session folder uploaded via Streamlit's file_uploader.
-
-    The zip must contain (at any depth) `topical_map.json` and
-    `briefs/all_briefs.json`. The first folder containing both is used.
-    """
     tmpdir = Path(tempfile.mkdtemp(prefix="cmos_session_"))
     try:
         with zipfile.ZipFile(uploaded_file) as zf:
             zf.extractall(tmpdir)
 
-        # Find a folder that contains both required files
         candidate = _find_session_root(tmpdir)
         if candidate is None:
             raise ValueError(
@@ -111,14 +101,10 @@ def load_from_zip(uploaded_file: IO, original_name: str = "session.zip") -> MapS
             )
 
         sess = load_from_local_folder(candidate)
-        # Override id/label to reflect zip origin (url_map already loaded)
         sess.session_id = candidate.name
         sess.source_label = f"zip: {original_name}"
-        return sess  # noqa: RET504
+        return sess
     finally:
-        # We keep the temp folder alive while caller uses the briefs/topical_map
-        # dict — they're already in memory as Python dicts.
-        # Safe to remove now.
         try:
             shutil.rmtree(tmpdir, ignore_errors=True)
         except Exception:
@@ -126,7 +112,6 @@ def load_from_zip(uploaded_file: IO, original_name: str = "session.zip") -> MapS
 
 
 def _find_session_root(root: Path) -> Optional[Path]:
-    """Return the first directory under root containing both required files."""
     for candidate in [root] + [p for p in root.rglob("*") if p.is_dir()]:
         if (candidate / "topical_map.json").exists() and \
            (candidate / "briefs" / "all_briefs.json").exists():
@@ -141,10 +126,6 @@ def load_from_files(
     briefs_json:      IO | str | bytes,
     session_label:    str = "upload",
 ) -> MapSession:
-    """
-    Load from two separately-uploaded files (topical_map.json + all_briefs.json).
-    Useful when the user can't zip them.
-    """
     tm_raw  = _read_json(topical_map_json)
     briefs  = _read_json(briefs_json)
     sess = _build_session(
@@ -175,7 +156,6 @@ def _slugify(text: str) -> str:
 # ── URL coverage helper ──────────────────────────────────────────────────────
 
 def _ensure_url_coverage(sess: MapSession) -> None:
-    """Autopopulate slugs for any page that has none. Always-on."""
     if sess.url_map is None:
         sess.url_map = URLMap()
     pages_for_slug = [
@@ -225,7 +205,6 @@ def make_engine_input(
     page_id: str,
     business: BusinessContext,
 ) -> ContentEngineInput:
-    """Build a ready-to-run ContentEngineInput for one page of a session."""
     if page_id not in session.briefs:
         raise KeyError(f"page_id '{page_id}' not in session {session.session_id}")
 
@@ -246,8 +225,6 @@ def make_engine_input(
         topical_map_ref=tm_ref,
         target_keyword=(brief.get("queries") or {}).get("primary_query"),
     )
-    # Stash the URLMap on the input as a private attribute — pipeline reads it.
-    # (Avoids polluting the Pydantic schema with a non-serializable type.)
     ci._url_map = session.url_map  # type: ignore[attr-defined]
     ci._page_titles = {p.page_id: p.page_title for p in session.pages}  # type: ignore[attr-defined]
     return ci
