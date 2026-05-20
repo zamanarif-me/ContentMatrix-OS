@@ -106,6 +106,7 @@ h1, h2, h3 {
 
 # ── Router ────────────────────────────────────────────────────────────────────
 from ui.home     import render_home
+from ui.sessions import render_sessions
 from ui.upload   import render_upload
 from ui.generate import render_generate
 from ui.preview  import render_preview
@@ -119,6 +120,7 @@ render_sidebar()
 
 page = st.session_state.page
 if   page == "home":     render_home()
+elif page == "sessions": render_sessions()
 elif page == "upload":   render_upload()
 elif page == "generate": render_generate()
 elif page == "preview":  render_preview()
