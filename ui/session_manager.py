@@ -113,3 +113,47 @@ def delete_session(session_id: str) -> bool:
     items = [s for s in list_sessions() if s.get("session_id") != session_id]
     INDEX_FILE.write_text(json.dumps(items, indent=2), encoding="utf-8")
     return True
+
+
+# ── Chain integration: per-page status lookup ────────────────────────────────
+
+def find_status_map(page_ids: list[str]) -> dict[str, list[dict]]:
+    """
+    For a list of page_ids (from a loaded MapSession), return a mapping
+    {page_id: [article_metas]} of all previously generated articles per page.
+
+    Used by ui/sessions.py to show DONE/pending badges next to each page
+    in the Sessions Browser. Reads sessions/index.json once.
+
+    Returns empty dict if no sessions exist or index unreadable.
+    """
+    if not page_ids:
+        return {}
+
+    wanted = set(page_ids)
+    by_page: dict[str, list[dict]] = {pid: [] for pid in page_ids}
+
+    for sess in list_sessions():
+        # Each session meta has the article it produced. We need to know which
+        # page_id it was generated for — that lives on the article.json dump.
+        sid = sess.get("session_id")
+        if not sid:
+            continue
+        article_json = session_path(sid) / "article.json"
+        if not article_json.exists():
+            continue
+        try:
+            data = json.loads(article_json.read_text(encoding="utf-8"))
+            pid = data.get("page_id")
+            if pid in wanted:
+                by_page.setdefault(pid, []).append({
+                    "session_id":    sid,
+                    "article_id":    data.get("article_id"),
+                    "quality_score": (data.get("quality") or {}).get("overall_score", 0),
+                    "status":        data.get("status"),
+                    "generated_at":  data.get("generated_at"),
+                })
+        except Exception:
+            continue
+
+    return by_page
