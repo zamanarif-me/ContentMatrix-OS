@@ -23,6 +23,7 @@ from content_models import (
 )
 from pipeline import run_pipeline
 from stages import bridge
+from stages.tone_loader import combine_tone_sources, extract_text_from_upload
 from ui.session_manager import find_status_map, save_session
 
 
@@ -299,6 +300,13 @@ def _render_business_block() -> None:
             "brand_name": "Zaman Arif",
             "brand_voice_notes": "",
         }
+    if "session_tone_text" not in st.session_state:
+        st.session_state.session_tone_text = ""
+    if "session_tone_filename" not in st.session_state:
+        st.session_state.session_tone_filename = ""
+    if "sess_tone_ver" not in st.session_state:
+        st.session_state.sess_tone_ver = 0
+
     b = st.session_state.session_business
 
     col1, col2 = st.columns(2)
@@ -321,32 +329,109 @@ def _render_business_block() -> None:
             placeholder="e.g. WP site owners, agencies, e-commerce stores",
             key="sb_aud",
         )
-    with col2:
         b["brand_name"] = st.text_input(
             "Brand",
             value=b["brand_name"],
             placeholder="Zaman Arif",
             key="sb_brand",
         )
-        b["brand_voice_notes"] = st.text_area(
-            "Voice notes (optional)",
-            value=b["brand_voice_notes"],
-            height=100,
-            placeholder="Direct, expert tone. No fluff. Use concrete examples.",
-            key="sb_voice",
+
+    with col2:
+        st.markdown("**🎙 Session Tone Override** (optional)")
+        st.caption(
+            "Upload a sample article (md / docx / zip) — overrides any global "
+            "tone set in the Home dashboard for this session only."
         )
+
+        tone_key = f"sess_tone_upload_{st.session_state.sess_tone_ver}"
+        uploaded = st.file_uploader(
+            "Voice sample",
+            type=["md", "markdown", "txt", "docx", "zip"],
+            key=tone_key,
+            label_visibility="collapsed",
+        )
+
+        if uploaded is not None:
+            try:
+                text = extract_text_from_upload(uploaded, filename=uploaded.name)
+                if text.strip():
+                    st.session_state.session_tone_text = text
+                    st.session_state.session_tone_filename = uploaded.name
+                    st.success(f"✓ Session tone: **{uploaded.name}** ({len(text):,} chars)")
+                else:
+                    st.warning(f"⚠ No readable text in {uploaded.name}")
+            except Exception as e:
+                st.error(f"Failed: {e}")
+        elif st.session_state.session_tone_text:
+            cc1, cc2 = st.columns([3, 1])
+            cc1.caption(
+                f"✓ Active: **{st.session_state.session_tone_filename}** "
+                f"({len(st.session_state.session_tone_text):,} chars)"
+            )
+            if cc2.button("✕ Clear", key="clear_sess_tone"):
+                st.session_state.session_tone_text = ""
+                st.session_state.session_tone_filename = ""
+                st.session_state.sess_tone_ver += 1
+                st.rerun()
+
+        # Fallback: still allow plain text input
+        with st.expander("Or type voice notes manually"):
+            b["brand_voice_notes"] = st.text_area(
+                "Voice notes",
+                value=b["brand_voice_notes"],
+                height=80,
+                placeholder="Direct, expert tone. No fluff.",
+                key="sb_voice",
+                label_visibility="collapsed",
+            )
+
     st.session_state.session_business = b
     st.caption("* required fields")
+
+    # Active tone source indicator
+    _render_active_tone_indicator()
+
+
+def _render_active_tone_indicator() -> None:
+    """Show which tone source is actually being used (Sessions > Home > Manual)."""
+    sess_tone = st.session_state.get("session_tone_text", "")
+    home_tone = st.session_state.get("global_tone_text", "")
+    manual    = st.session_state.get("session_business", {}).get("brand_voice_notes", "")
+
+    if sess_tone:
+        st.info(
+            f"🎙 **Active tone source: Session file** "
+            f"(`{st.session_state.get('session_tone_filename', '?')}`) — "
+            f"this overrides any global Home tone."
+        )
+    elif home_tone:
+        fname = st.session_state.get('global_tone_filename', '?')
+        st.info(
+            f"🎙 **Active tone source: Home global tone** "
+            f"(`{fname}`) — upload a session-specific file above to override."
+        )
+    elif manual:
+        st.info("🎙 **Active tone source: Manual text notes**")
+    else:
+        st.caption("🎙 No custom tone set — using default house rules only.")
 
 
 def _build_business() -> BusinessContext:
     b = st.session_state.get("session_business", {})
+
+    # Priority: Sessions file > Home global file > Manual text
+    tone = combine_tone_sources(
+        sessions_text=st.session_state.get("session_tone_text", ""),
+        home_text=st.session_state.get("global_tone_text", ""),
+        manual_text=b.get("brand_voice_notes", ""),
+    )
+
     return BusinessContext(
         category=BusinessCategory(b.get("category", "service_business")),
         niche=b.get("niche") or "general",
         audience=[a.strip() for a in (b.get("audience", "") or "").split(",") if a.strip()],
         brand_name=b.get("brand_name") or None,
-        brand_voice_notes=b.get("brand_voice_notes") or None,
+        brand_voice_notes=tone,
     )
 
 
