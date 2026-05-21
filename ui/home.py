@@ -105,6 +105,7 @@ def _render_train_tone() -> None:
                 st.error(f"Failed to read file: {e}")
 
     with col_status:
+        st.markdown("Creating Content tone")
         if st.session_state.global_tone_text:
             st.metric(
                 "Tone active",
