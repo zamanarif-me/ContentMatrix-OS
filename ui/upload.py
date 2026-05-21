@@ -75,16 +75,109 @@ def _render_engine_source() -> None:
 
 def _render_json_upload() -> None:
     st.markdown("Upload a complete `ContentEngineInput` JSON (see `example_input.json`).")
+    st.caption(
+        "⚠ This tab accepts a **single-brief** JSON wrapped with `business` + "
+        "`brief_payload`. If you have `topical_map.json` or `all_briefs.json` "
+        "from topical-map-engine-pro, use **Sessions** instead."
+    )
+
     f = st.file_uploader("JSON file", type=["json"])
     if not f:
         return
+
     try:
         data = json.loads(f.read())
+    except Exception as e:
+        st.error(f"JSON parse failed: {e}")
+        return
+
+    # ── Smart format detection ───────────────────────────────────────────────
+    detected = _detect_json_format(data, f.name)
+
+    if detected == "topical_map":
+        _show_redirect_to_sessions(
+            f.name,
+            kind="topical_map.json",
+            extra="It contains a topical map structure (seed_keyword + pillars/clusters).",
+        )
+        return
+
+    if detected == "all_briefs":
+        _show_redirect_to_sessions(
+            f.name,
+            kind="all_briefs.json",
+            extra=f"It contains {len(data)} content brief(s) keyed by page_id.",
+        )
+        return
+
+    # Try the proper ContentEngineInput validation
+    try:
         ci = ContentEngineInput.model_validate(data)
         st.session_state.content_input = ci.model_dump(mode="json")
-        st.success("Loaded. Go to Generate.")
+        st.success("✅ Loaded. Go to Generate.")
     except Exception as e:
-        st.error(f"Invalid JSON or schema: {e}")
+        st.error(
+            f"❌ Not a valid `ContentEngineInput` JSON.\n\n"
+            f"Expected fields: `business`, `brief_source`, `brief_payload`.\n\n"
+            f"Validator says: {str(e)[:300]}"
+        )
+        st.info(
+            "💡 If your file is `topical_map.json` or `all_briefs.json`, "
+            "use the **Sessions** page instead — it expects those exact files."
+        )
+        if st.button("→ Go to Sessions now", type="primary", key="upload_redirect_sessions"):
+            st.session_state.page = "sessions"
+            st.rerun()
+
+
+def _detect_json_format(data, filename: str) -> str:
+    """Return one of: 'topical_map', 'all_briefs', 'content_engine_input', 'unknown'."""
+    name = filename.lower()
+
+    if not isinstance(data, dict):
+        return "unknown"
+
+    # Filename hints
+    if "topical_map" in name:
+        return "topical_map"
+    if "all_briefs" in name or "briefs" in name:
+        return "all_briefs"
+
+    # Structural hints — topical_map has either nested 'topical_map' key or
+    # top-level seed_keyword/pillars/central_entity
+    if "topical_map" in data:
+        return "topical_map"
+    if "input" in data and isinstance(data.get("input"), dict) and "seed_keyword" in data["input"]:
+        return "topical_map"
+    if any(k in data for k in ("pillars", "clusters", "seed_keyword", "central_entity")):
+        return "topical_map"
+
+    # all_briefs is a flat dict where every value has page_title or queries
+    if data and all(
+        isinstance(v, dict) and ("page_title" in v or "queries" in v)
+        for v in data.values()
+    ):
+        return "all_briefs"
+
+    # ContentEngineInput has these top-level keys
+    if "business" in data and "brief_payload" in data:
+        return "content_engine_input"
+
+    return "unknown"
+
+
+def _show_redirect_to_sessions(filename: str, kind: str, extra: str = "") -> None:
+    st.warning(
+        f"📁 **`{filename}`** looks like a **{kind}** file, not a `ContentEngineInput`.\n\n"
+        f"{extra}"
+    )
+    st.info(
+        "👉 Go to the **Sessions** page to load this file properly. "
+        "Sessions accepts both `topical_map.json` + `all_briefs.json` together."
+    )
+    if st.button("→ Open Sessions now", type="primary", key=f"redir_{kind}"):
+        st.session_state.page = "sessions"
+        st.rerun()
 
 
 # ── Tab 3: Manual form ────────────────────────────────────────────────────────

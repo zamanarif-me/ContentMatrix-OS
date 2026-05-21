@@ -25,7 +25,7 @@ def render_home() -> None:
     col1, col2, col3, col4 = st.columns(4)
     with col1:
         st.markdown("**2. Sessions**")
-        st.caption("Bulk-friendly. Load a topical-map and generate all pages.")
+        st.caption("Bulk-friendly. Load a topical-map session and generate all pages.")
         if st.button("Go to Sessions", use_container_width=True, key="home_sessions"):
             st.session_state.page = "sessions"
             st.rerun()
@@ -105,7 +105,6 @@ def _render_train_tone() -> None:
                 st.error(f"Failed to read file: {e}")
 
     with col_status:
-        st.markdown("Creating Content tone")
         if st.session_state.global_tone_text:
             st.metric(
                 "Tone active",
