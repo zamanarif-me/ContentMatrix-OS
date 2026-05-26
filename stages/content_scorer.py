@@ -1,15 +1,15 @@
 """
 Stage 4: Content Scorer (NeuronWriter-style)
 
-Custom scoring formula — weights are tunable per-niche.
   score = term_coverage(50) + entity_coverage(20) + structure(15)
         + word_count_fit(10) + readability(5)
 
-This version (improvements vs old scorer):
-  - Noise-term filter — drops "services, trimming, provides, following" etc.
-    from "required terms" check before scoring
-  - Adaptive word-count tolerance — 30% instead of strict 20% for large articles
-  - Smarter heading match — significant-word overlap, not just 40-char prefix
+This version fixes false positives that made internal scores ~15 points
+lower than external reviewers (GPT/NeuronWriter) for the same article:
+  - Person-name filter (e.g. "Chavez" from SERP) — drops from required terms
+  - Asymmetric word-count tolerance — overage is fine, underage still penalized
+  - Structure check skips H3s (only H2s — pipeline doesn't promote H3 anyway)
+  - Special-section auto-pass for synthesized Intro/FAQ/Conclusion
 """
 
 from __future__ import annotations
@@ -58,12 +58,29 @@ _NOISE_TERMS = {
 
 
 def _is_noise(term: str) -> bool:
-    t = (term or "").strip().lower()
-    if not t:
+    """
+    A term is noise if it has no SEO value:
+      - common English filler ("provides", "services", "following")
+      - person name leaked from SERP results ("Chavez", "Smith")
+    """
+    t_raw = (term or "").strip()
+    if not t_raw:
         return True
-    if " " in t or "-" in t:
+    t_low = t_raw.lower()
+    if " " in t_low or "-" in t_low:
         return False
-    return t in _NOISE_TERMS
+    if t_low in _NOISE_TERMS:
+        return True
+    # Likely a person name: single capitalized word, 4-12 chars, no digits
+    if (
+        len(t_raw) >= 4
+        and len(t_raw) <= 12
+        and t_raw[0].isupper()
+        and t_raw[1:].islower()
+        and t_raw.isalpha()
+    ):
+        return True
+    return False
 
 
 def _filter_noise(terms: list[str]) -> list[str]:
@@ -113,17 +130,32 @@ def compute_term_coverage(
     )
 
 
-# ── Word count fit (adaptive tolerance) ──────────────────────────────────────
+# ── Word count fit (asymmetric: overage tolerated, underage penalized) ──────
 
 def _word_count_score(actual: int, target: int, tolerance: float) -> tuple[float, bool]:
+    """
+    Asymmetric + adaptive tolerance:
+      - Going OVER target is penalized very lightly (longer = more SEO value)
+      - Going UNDER target is penalized normally (thin content = SEO risk)
+      - Large targets (>=2000) get +20% extra tolerance overall
+    """
     if target <= 0:
         return 1.0, True
-    effective_tol = tolerance + (0.10 if target >= 2000 else 0.05)
-    low, high = target * (1 - effective_tol), target * (1 + effective_tol)
+
+    base_tol = tolerance + (0.20 if target >= 2000 else 0.10)
+
+    low  = target * (1 - base_tol)
+    high = target * (1 + base_tol * 2.0)   # 2x more room above target
+
     if low <= actual <= high:
         return 1.0, True
-    diff_ratio = abs(actual - target) / target
-    return max(0.0, 1.0 - diff_ratio * 0.5), False
+
+    if actual < low:
+        diff_ratio = (target - actual) / target
+        return max(0.0, 1.0 - diff_ratio), False
+    # Over target — trivial penalty
+    diff_ratio = (actual - target) / target
+    return max(0.5, 1.0 - diff_ratio * 0.2), False
 
 
 # ── Readability ──────────────────────────────────────────────────────────────
@@ -161,7 +193,7 @@ def _flesch_grade(score: float) -> str:
     return "expert (graduate)"
 
 
-# ── Structure (smart heading match) ──────────────────────────────────────────
+# ── Structure (smart, H2-only, special-section auto-pass) ────────────────────
 
 _STOP = {
     "the", "a", "an", "of", "to", "in", "for", "and", "or",
@@ -176,34 +208,53 @@ def _significant_words(text: str) -> set[str]:
 
 
 def _structure_score(article_md: str, outline_headings: list[OutlineHeading]) -> float:
-    if not outline_headings:
-        return 0.0
+    """
+    Only H2 outline headings are checked. H3s are advisory in outline but
+    not promoted to article sections, so penalizing missing H3s would create
+    false negatives.
+    """
+    h2_outline = [h for h in outline_headings if (h.level or "").upper() == "H2"]
+    if not h2_outline:
+        return 1.0
 
     body_lower = article_md.lower()
     article_h2_lines = re.findall(r"^\s*##\s+(.+)$", article_md, flags=re.MULTILINE)
     article_h2_word_sets = [_significant_words(line) for line in article_h2_lines]
 
+    special_tokens = (
+        "intro", "introduction", "overview",
+        "conclusion", "summary", "final thought", "wrapping up", "key takeaways",
+        "faq", "frequently asked", "common questions",
+    )
+
     hits = 0
-    for h in outline_headings:
-        text_low = h.text.lower().strip()
+    for h in h2_outline:
+        text_low = (h.text or "").lower().strip()
         if not text_low:
+            hits += 1
             continue
-        if text_low[:40] in body_lower:
+        if any(tok in text_low for tok in special_tokens):
+            hits += 1
+            continue
+        prefix = text_low[:30]
+        if prefix and prefix in body_lower:
             hits += 1
             continue
         outline_words = _significant_words(h.text)
         if not outline_words:
             hits += 1
             continue
+        best_overlap = 0.0
         for art_words in article_h2_word_sets:
             if not art_words:
                 continue
             overlap = len(outline_words & art_words) / len(outline_words)
-            if overlap >= 0.6:
-                hits += 1
-                break
+            if overlap > best_overlap:
+                best_overlap = overlap
+        if best_overlap >= 0.4:
+            hits += 1
 
-    return hits / len(outline_headings)
+    return hits / len(h2_outline)
 
 
 # ── Top-level ────────────────────────────────────────────────────────────────
@@ -236,11 +287,11 @@ def score_article(
         issues.append(f"Missing required terms: {', '.join(term_cov.missing_must[:5])}")
         suggestions.append("Inject missing terms into relevant H2 sections")
     if not wc_in_range:
-        eff_tol = int((target.word_count_tolerance + (0.10 if target.target_word_count >= 2000 else 0.05)) * 100)
+        eff_tol = int((target.word_count_tolerance + (0.20 if target.target_word_count >= 2000 else 0.10)) * 100)
         issues.append(f"Word count {wc} outside target {target.target_word_count} ± {eff_tol}%")
         suggestions.append("Expand or trim body sections to meet target")
     if structure < 0.8:
-        issues.append(f"Outline headings only {int(structure*100)}% present in final article")
+        issues.append(f"Outline H2 headings only {int(structure*100)}% present in final article")
 
     passed = (
         overall                    >= target.min_content_score
