@@ -1,11 +1,17 @@
 """
-Top-level pipeline orchestrator.
+Top-level pipeline orchestrator — ContentMatrix OS.
 
-THIS VERSION fixes:
-  - Duplicate H2 headings in outline (dedupe by lowercased text)
-  - Conclusion picked from last outline heading (now synthetic "Conclusion" H2)
-  - FAQ section never generated (now always added before conclusion)
-  - Outline headings missing from final article (force heading preservation)
+End-to-end flow for generating ONE article:
+  SERP → Term extract → Outline → Sections (intro + body + FAQ + conclusion)
+  → Humanize → Assemble → Link inject → Score → Refine → Export
+
+This version (deployed-compatible):
+  - Compatible with old link_injector.py (no url_map kwargs)
+  - Compatible with old refiner.py (no brief/terms kwargs)
+  - Dedupes duplicate H2 headings in outline
+  - Always synthesizes "Conclusion" H2 instead of using last outline heading
+  - Always generates FAQ section (was completely missing before)
+  - Skips intro/FAQ/conclusion-like H2s from body to prevent duplicates
 """
 
 from __future__ import annotations
@@ -112,7 +118,7 @@ def run_pipeline(
         done += 1
         _progress("Section writing", 0.4 + 0.4 * done / max(total_steps, 1))
 
-    # FAQ (NEW)
+    # FAQ (NEW — was missing in old pipeline)
     if config.include_faq:
         prev = sections[-1] if sections else None
         sections.append(section_writer.write_section(
@@ -124,7 +130,7 @@ def run_pipeline(
         done += 1
         _progress("Section writing", 0.4 + 0.4 * done / max(total_steps, 1))
 
-    # Conclusion (synthetic heading, not last H3)
+    # Conclusion (synthetic "Conclusion" heading, not last body H3)
     if config.include_conclusion:
         prev = sections[-1] if sections else None
         sections.append(section_writer.write_section(
@@ -182,15 +188,9 @@ def run_pipeline(
     # ── Stage 7: Refine ──────────────────────────────────────────────────────
     if not quality.passed_target:
         _progress("Refinement", 0.9)
-        article, quality = refiner.refine_until_target(
-            article, quality, config,
-            brief=input_.brief_payload,
-            business=input_.business,
-            terms=terms,
-            dry_run=dry_run,
-        )
+        article, quality = refiner.refine_until_target(article, quality, config)
         article.quality = quality
-        _log(f"  after refine: score={quality.overall_score}/100 | passes={article.refine_passes}")
+        _log(f"  after refine: score={quality.overall_score}/100 | passes={getattr(article, 'refine_passes', 0)}")
 
     article.status = ArticleStatus.COMPLETE if quality.passed_target else ArticleStatus.READY
     article.cost_usd = tracker.total_cost
@@ -229,7 +229,7 @@ def _dedupe_and_clean_outline(outline):
 
 
 def _body_h2_headings(outline) -> list:
-    """Return H2 headings suitable for the BODY (excludes intro/FAQ/conclusion-like)."""
+    """Return H2 headings suitable for BODY (excludes intro/FAQ/conclusion-like)."""
     body = []
     for h in outline.headings:
         if h.level != "H2":
