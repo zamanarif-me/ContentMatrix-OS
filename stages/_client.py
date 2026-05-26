@@ -9,7 +9,12 @@ Two entry points:
   call_text()       -> returns raw text (use for prose: section bodies, intros, FAQs)
   call_structured() -> returns a parsed Pydantic model (use for outlines, reports)
 
-Both auto-retry on transient errors. Both log to the cost tracker.
+NEW (this version):
+  - Auto-retry on Gemini 429 RESOURCE_EXHAUSTED with parsed retryDelay
+  - Auto-fallback to Claude when Gemini quota is exhausted:
+      gemini-flash → claude-haiku-4-5
+      gemini-pro   → claude-sonnet-4-6
+  - Better error messages for production debugging
 """
 
 from __future__ import annotations
@@ -74,7 +79,6 @@ def detect_provider(model: str) -> Provider:
 
 PROMPTS_DIR = Path(__file__).parent.parent / "prompts"
 
-
 _HOUSE_RULES_CACHE: Optional[str] = None
 
 
@@ -90,11 +94,7 @@ def _house_rules() -> str:
 def load_prompt(name: str, include_house_rules: bool = True) -> str:
     """
     Load a system prompt file from /prompts.
-
-    By default, prepends the universal house rules from `_house_rules.txt`
-    (covers US English, no emoji, E-E-A-T, AI jargon ban, etc.).
-    Pass include_house_rules=False to skip — useful for tests or
-    non-content prompts (e.g. JSON-only QA reports).
+    By default, prepends the universal house rules from `_house_rules.txt`.
     """
     path = PROMPTS_DIR / f"{name}.txt"
     if not path.exists():
@@ -119,7 +119,47 @@ def _extract_json(text: str) -> str:
     return text[first : last + 1]
 
 
-# ── call_text — for prose generation (Phase 2A) ──────────────────────────────
+# ── Error classification & retry helpers ─────────────────────────────────────
+
+def _is_quota_error(exc: Exception) -> bool:
+    """Detect Gemini 429 RESOURCE_EXHAUSTED or Anthropic rate-limit errors."""
+    s = str(exc)
+    return (
+        "429" in s
+        or "RESOURCE_EXHAUSTED" in s
+        or "rate_limit" in s.lower()
+        or "quota" in s.lower()
+    )
+
+
+def _parse_retry_delay(exc: Exception, default: float = 5.0) -> float:
+    """Pull `retryDelay: Xs` from a Gemini error message, capped at 30s."""
+    s = str(exc)
+    match = re.search(r"retryDelay['\"]?\s*[:=]\s*['\"]?(\d+(?:\.\d+)?)s", s)
+    if match:
+        try:
+            return min(float(match.group(1)) + 0.5, 30.0)
+        except ValueError:
+            pass
+    match = re.search(r"retry in (\d+(?:\.\d+)?)s", s)
+    if match:
+        try:
+            return min(float(match.group(1)) + 0.5, 30.0)
+        except ValueError:
+            pass
+    return default
+
+
+def _claude_fallback_for(model: str) -> str | None:
+    """Map a Gemini model → equivalent Claude model for emergency fallback."""
+    if model.startswith("gemini"):
+        if "flash" in model:
+            return CLAUDE_HAIKU_4_5
+        return CLAUDE_SONNET_4_6
+    return None
+
+
+# ── call_text — for prose generation ──────────────────────────────────────────
 
 def call_text(
     system_prompt: str,
@@ -127,15 +167,17 @@ def call_text(
     *,
     model: str = DEFAULT_MODEL,
     max_tokens: int = DEFAULT_MAX_TOKENS,
-    max_retries: int = 2,
+    max_retries: int = 3,
     stage: str = "unknown",
     temperature: float = 0.7,
+    allow_fallback: bool = True,
 ) -> str:
     """
-    Call an LLM and return raw text. Use for prose generation
-    (section bodies, intros, FAQs, conclusions).
-
-    Auto-retries on transient errors with exponential backoff.
+    Call an LLM and return raw text.
+    Retry strategy:
+      - Transient errors: exponential backoff (2, 4, 8s)
+      - Gemini 429: parse retryDelay, sleep, retry
+      - Persistent Gemini quota: auto-fallback to Claude
     """
     provider = detect_provider(model)
     last_err: Exception | None = None
@@ -147,6 +189,36 @@ def call_text(
             return _call_gemini_text(system_prompt, user_message, model, stage, temperature, max_tokens)
         except Exception as e:
             last_err = e
+
+            if _is_quota_error(e):
+                if attempt < max_retries:
+                    delay = _parse_retry_delay(e)
+                    print(
+                        f"[_client] {stage} hit quota on {model}. "
+                        f"Retrying in {delay:.1f}s (attempt {attempt+1}/{max_retries})",
+                        flush=True,
+                    )
+                    time.sleep(delay)
+                    continue
+                if allow_fallback and provider == "gemini":
+                    fallback = _claude_fallback_for(model)
+                    if fallback:
+                        print(
+                            f"[_client] {stage} exhausted on {model} → "
+                            f"falling back to {fallback}",
+                            flush=True,
+                        )
+                        return _call_anthropic_text(
+                            system_prompt, user_message, fallback,
+                            max_tokens, f"{stage}_fallback", temperature,
+                        )
+                raise RuntimeError(
+                    f"Gemini quota exhausted after {max_retries+1} attempts. "
+                    f"Either upgrade to paid tier (https://ai.google.dev/pricing) "
+                    f"or set ANTHROPIC_API_KEY for auto-fallback. "
+                    f"Original: {str(e)[:200]}"
+                )
+
             if attempt < max_retries:
                 time.sleep(2 ** attempt)
                 continue
@@ -164,24 +236,25 @@ def call_structured(
     *,
     model: str = DEFAULT_MODEL,
     max_tokens: int = DEFAULT_MAX_TOKENS,
-    max_retries: int = 2,
+    max_retries: int = 3,
     stage: str = "unknown",
     temperature: float = 0.3,
+    allow_fallback: bool = True,
 ) -> T:
     """
-    Call an LLM and parse the JSON response into a Pydantic model.
-    On JSON/validation failure, re-prompts with the error included.
+    Call an LLM and parse JSON response into a Pydantic model.
+    Same retry/fallback strategy as call_text + JSON re-prompt on validation failure.
     """
-    provider = detect_provider(model)
     last_err: Exception | None = None
     msg = user_message
+    active_model = model
 
     for attempt in range(max_retries + 1):
         try:
-            if provider == "anthropic":
-                text = _call_anthropic_text(system_prompt, msg, model, max_tokens, stage, temperature)
+            if detect_provider(active_model) == "anthropic":
+                text = _call_anthropic_text(system_prompt, msg, active_model, max_tokens, stage, temperature)
             else:
-                text = _call_gemini_text(system_prompt, msg, model, stage, temperature, max_tokens)
+                text = _call_gemini_text(system_prompt, msg, active_model, stage, temperature, max_tokens)
             data = json.loads(_extract_json(text))
             return response_model.model_validate(data)
 
@@ -199,6 +272,33 @@ def call_structured(
 
         except Exception as e:
             last_err = e
+
+            if _is_quota_error(e):
+                if attempt < max_retries:
+                    delay = _parse_retry_delay(e)
+                    print(
+                        f"[_client] {stage} hit quota on {active_model}. "
+                        f"Retrying in {delay:.1f}s (attempt {attempt+1}/{max_retries})",
+                        flush=True,
+                    )
+                    time.sleep(delay)
+                    continue
+                if allow_fallback and detect_provider(active_model) == "gemini":
+                    fallback = _claude_fallback_for(active_model)
+                    if fallback:
+                        print(
+                            f"[_client] {stage} exhausted on {active_model} → "
+                            f"falling back to {fallback}",
+                            flush=True,
+                        )
+                        active_model = fallback
+                        continue
+                raise RuntimeError(
+                    f"Gemini quota exhausted after {max_retries+1} attempts. "
+                    f"Either upgrade to paid tier or ensure ANTHROPIC_API_KEY is set for fallback. "
+                    f"Original: {str(e)[:200]}"
+                )
+
             if attempt < max_retries:
                 time.sleep(2 ** attempt)
                 continue
