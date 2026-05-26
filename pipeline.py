@@ -165,8 +165,6 @@ def run_pipeline(
             article,
             bridges=input_.brief_payload.get("semantic_bridges") or [],
             next_destination=input_.brief_payload.get("next_destination"),
-            url_map=getattr(input_, "_url_map", None),
-            page_titles=getattr(input_, "_page_titles", None),
         )
         _log(
             f"  bridges: {report.bridges_wrapped} wrapped, "
