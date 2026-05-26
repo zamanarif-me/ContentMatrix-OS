@@ -225,8 +225,8 @@ class ModelStrategy(BaseModel):
     Other models remain in WritingModel enum for future flexibility,
     but the default + UI are restricted to these two.
     """
-    outline_model:    WritingModel = WritingModel.GEMINI_FLASH
-    section_model:    WritingModel = WritingModel.GEMINI_FLASH
+    outline_model:    WritingModel = WritingModel.CLAUDE_SONNET
+    section_model:    WritingModel = WritingModel.CLAUDE_SONNET
     refine_model:     WritingModel = WritingModel.CLAUDE_SONNET
     qa_model:         WritingModel = WritingModel.CLAUDE_SONNET
 
