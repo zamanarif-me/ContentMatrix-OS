@@ -10,8 +10,7 @@ def render_home() -> None:
     st.markdown(
         "<p class='hero-subtitle'>"
         "Turn a Topical Map and Content Brief into a publication-ready, "
-        "SEO-optimized article — chunk by chunk, cached, score-gated."
-        Created By "Zaman Arif"
+        "SEO-optimized article — chunk by chunk, cached, score-gated." Created By "Zaman Arif"
         "</p>",
         unsafe_allow_html=True,
     )
