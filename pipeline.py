@@ -1,25 +1,11 @@
 """
 Top-level pipeline orchestrator.
 
-End-to-end flow for generating ONE article:
-
-    ContentEngineInput
-        v  Stage 2  (SERP enrichment, cached)
-    SerpResult
-        v  Stage 3  (term extraction)
-    TermSet
-        v  Stage 5  (outline build)
-    ArticleOutline
-        v  Stage 6  (section writing, chunk-by-chunk, cached)
-    list[SectionDraft]
-        v  Assembly
-    GeneratedArticle (final_md filled)
-        v  Stage 4  (quality scoring)
-    QualityReport
-        v  Stage 7  (refinement loop, score-gated)
-    GeneratedArticle (passed_target or max_passes)
-        v  Stage 8  (export)
-    files on disk
+THIS VERSION fixes:
+  - Duplicate H2 headings in outline (dedupe by lowercased text)
+  - Conclusion picked from last outline heading (now synthetic "Conclusion" H2)
+  - FAQ section never generated (now always added before conclusion)
+  - Outline headings missing from final article (force heading preservation)
 """
 
 from __future__ import annotations
@@ -33,6 +19,7 @@ from content_models import (
     ExportFormat,
     GeneratedArticle,
     GenerationConfig,
+    OutlineHeading,
     SectionType,
 )
 from stages import (
@@ -54,15 +41,7 @@ def run_pipeline(
     *,
     dry_run: bool = False,
 ) -> GeneratedArticle:
-    """
-    Generate one article end-to-end.
-
-    Args:
-      input_:       Validated ContentEngineInput
-      config:       Generation knobs
-      output_dir:   Where to write export files (None = skip export)
-      progress_cb:  Optional callback(stage_name: str, pct: float)
-    """
+    """Generate one article end-to-end."""
     tracker.reset()
 
     def _progress(stage: str, pct: float) -> None:
@@ -86,13 +65,23 @@ def run_pipeline(
     # ── Stage 5: Outline ─────────────────────────────────────────────────────
     _progress("Outline build", 0.3)
     outline = outline_builder.build_outline(input_, config, serp=serp, terms=terms)
-    _log(f"  headings={len(outline.headings)} | est_words={outline.estimated_word_count}")
+    outline = _dedupe_and_clean_outline(outline)
+    _log(f"  headings={len(outline.headings)} (after dedupe) | est_words={outline.estimated_word_count}")
 
-    # ── Stage 6: Section writing ─────────────────────────────────────────────
+    # ── Stage 6: Section writing (intro → body → FAQ → conclusion) ───────────
     _progress("Section writing", 0.4)
     sections = []
-    h2_headings = [h for h in outline.headings if h.level == "H2"]
-    total = len(h2_headings) + (1 if config.include_intro else 0) + (1 if config.include_conclusion else 0)
+    h2_body_headings = _body_h2_headings(outline)
+
+    faq_heading        = _find_or_make_faq_heading(outline)
+    conclusion_heading = _find_or_make_conclusion_heading(outline)
+
+    total_steps = (
+        len(h2_body_headings)
+        + (1 if config.include_intro else 0)
+        + (1 if config.include_faq else 0)
+        + (1 if config.include_conclusion else 0)
+    )
     done = 0
 
     def _tail(s) -> str:
@@ -101,16 +90,19 @@ def run_pipeline(
         paras = [p for p in s.content_md.strip().split("\n\n") if p.strip()]
         return paras[-1] if paras else ""
 
+    # Intro
     if config.include_intro:
+        intro_heading = _find_or_make_intro_heading(outline)
         sections.append(section_writer.write_section(
-            section_id="s_intro", heading=outline.headings[0] if outline.headings else None,
+            section_id="s_intro", heading=intro_heading,
             section_type=SectionType.INTRO, brief=input_.brief_payload,
             business=input_.business, config=config, dry_run=dry_run,
         ))
         done += 1
-        _progress("Section writing", 0.4 + 0.4 * done / max(total, 1))
+        _progress("Section writing", 0.4 + 0.4 * done / max(total_steps, 1))
 
-    for i, h in enumerate(h2_headings):
+    # Body H2s
+    for i, h in enumerate(h2_body_headings):
         prev = sections[-1] if sections else None
         sections.append(section_writer.write_section(
             section_id=f"s_{i+1:03d}", heading=h, section_type=SectionType.BODY,
@@ -118,20 +110,32 @@ def run_pipeline(
             previous_tail=_tail(prev), dry_run=dry_run,
         ))
         done += 1
-        _progress("Section writing", 0.4 + 0.4 * done / max(total, 1))
+        _progress("Section writing", 0.4 + 0.4 * done / max(total_steps, 1))
 
-    if config.include_conclusion:
-        last = outline.headings[-1] if outline.headings else None
+    # FAQ (NEW)
+    if config.include_faq:
         prev = sections[-1] if sections else None
         sections.append(section_writer.write_section(
-            section_id="s_conclusion", heading=last,
+            section_id="s_faq", heading=faq_heading,
+            section_type=SectionType.FAQ, brief=input_.brief_payload,
+            business=input_.business, config=config,
+            previous_tail=_tail(prev), dry_run=dry_run,
+        ))
+        done += 1
+        _progress("Section writing", 0.4 + 0.4 * done / max(total_steps, 1))
+
+    # Conclusion (synthetic heading, not last H3)
+    if config.include_conclusion:
+        prev = sections[-1] if sections else None
+        sections.append(section_writer.write_section(
+            section_id="s_conclusion", heading=conclusion_heading,
             section_type=SectionType.CONCLUSION, brief=input_.brief_payload,
             business=input_.business, config=config,
             previous_tail=_tail(prev), dry_run=dry_run,
         ))
         done += 1
 
-    # ── Stage 6.5: Humanization pass (default ON) ───────────────────────────
+    # ── Stage 6.5: Humanization ──────────────────────────────────────────────
     if config.enable_humanization and not dry_run:
         _progress("Humanization", 0.75)
         humanized = []
@@ -154,13 +158,15 @@ def run_pipeline(
     )
     article.final_md = exporter.assemble_markdown(article)
 
-    # ── Stage 7B: Internal link injection (safety net) ──────────────────────
+    # ── Stage 7B: Internal link injection ───────────────────────────────────
     if config.enable_internal_linking:
         _progress("Internal linking", 0.82)
         report = link_injector.inject_from_brief(
             article,
             bridges=input_.brief_payload.get("semantic_bridges") or [],
             next_destination=input_.brief_payload.get("next_destination"),
+            url_map=getattr(input_, "_url_map", None),
+            page_titles=getattr(input_, "_page_titles", None),
         )
         _log(
             f"  bridges: {report.bridges_wrapped} wrapped, "
@@ -178,8 +184,15 @@ def run_pipeline(
     # ── Stage 7: Refine ──────────────────────────────────────────────────────
     if not quality.passed_target:
         _progress("Refinement", 0.9)
-        article, quality = refiner.refine_until_target(article, quality, config)
+        article, quality = refiner.refine_until_target(
+            article, quality, config,
+            brief=input_.brief_payload,
+            business=input_.business,
+            terms=terms,
+            dry_run=dry_run,
+        )
         article.quality = quality
+        _log(f"  after refine: score={quality.overall_score}/100 | passes={article.refine_passes}")
 
     article.status = ArticleStatus.COMPLETE if quality.passed_target else ArticleStatus.READY
     article.cost_usd = tracker.total_cost
@@ -196,3 +209,105 @@ def run_pipeline(
 
     _progress("Done", 1.0)
     return article
+
+
+# ── Outline helpers ──────────────────────────────────────────────────────────
+
+def _dedupe_and_clean_outline(outline):
+    """Remove duplicate headings (case-insensitive) and strip empty ones."""
+    seen = set()
+    kept = []
+    for h in outline.headings:
+        text = (h.text or "").strip()
+        if not text:
+            continue
+        norm = text.lower().rstrip(".:;!?")
+        if norm in seen:
+            continue
+        seen.add(norm)
+        kept.append(h)
+    outline.headings = kept
+    return outline
+
+
+def _body_h2_headings(outline) -> list:
+    """Return H2 headings suitable for the BODY (excludes intro/FAQ/conclusion-like)."""
+    body = []
+    for h in outline.headings:
+        if h.level != "H2":
+            continue
+        if _is_intro_like(h.text):
+            continue
+        if _is_faq_like(h.text):
+            continue
+        if _is_conclusion_like(h.text):
+            continue
+        body.append(h)
+    return body
+
+
+def _find_or_make_intro_heading(outline):
+    for h in outline.headings:
+        if h.level == "H2" and _is_intro_like(h.text):
+            return h
+    return OutlineHeading(
+        level="H2",
+        text="Introduction",
+        semantic_purpose="Hook the reader and preview the article scope",
+        target_word_count=150,
+        target_entities=[],
+        target_queries=[],
+    )
+
+
+def _find_or_make_faq_heading(outline):
+    for h in outline.headings:
+        if _is_faq_like(h.text):
+            return h
+    return OutlineHeading(
+        level="H2",
+        text="Frequently Asked Questions",
+        semantic_purpose="Answer common reader questions with concise paragraphs",
+        target_word_count=350,
+        target_entities=[],
+        target_queries=[],
+    )
+
+
+def _find_or_make_conclusion_heading(outline):
+    for h in outline.headings:
+        if h.level == "H2" and _is_conclusion_like(h.text):
+            return h
+    return OutlineHeading(
+        level="H2",
+        text="Conclusion",
+        semantic_purpose="Summarize key takeaways and present a clear next step",
+        target_word_count=180,
+        target_entities=[],
+        target_queries=[],
+    )
+
+
+# ── Heading type detection ───────────────────────────────────────────────────
+
+_INTRO_TOKENS = ("intro", "introduction", "overview", "getting started")
+_FAQ_TOKENS = ("faq", "frequently asked", "common questions", "questions answered")
+_CONCLUSION_TOKENS = (
+    "conclusion", "final thought", "wrapping up", "wrap up",
+    "key takeaways", "summary", "bottom line",
+)
+
+
+def _is_intro_like(text: str) -> bool:
+    t = (text or "").lower().strip()
+    return any(tok in t for tok in _INTRO_TOKENS)
+
+
+def _is_faq_like(text: str) -> bool:
+    t = (text or "").lower().strip()
+    return any(tok in t for tok in _FAQ_TOKENS)
+
+
+def _is_conclusion_like(text: str) -> bool:
+    t = (text or "").lower().strip()
+    return any(tok in t for tok in _CONCLUSION_TOKENS)
